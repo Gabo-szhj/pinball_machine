@@ -68,6 +68,7 @@ Div24by16U:
     ldi     r22, DIV24_BITCOUNT ; Set bit loop counter for 24 bits (size of dividend).
     clr     r4                  ; Clear Remainder Low Byte.
     clr     r3                  ; Clear Remainder High Byte.
+    clc
 
 ; --- Division Loop ---
 ; Uses Restoring Division algorithm.

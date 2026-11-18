@@ -178,12 +178,35 @@ StartupMuxLoop:
     dec r20                 ; Decrement counter.
     brne StartupMuxLoop     ; Loop until test is complete.
     
-    ; 5. Enable Global Interrupts (timer will now update display continuously)
-    sei                ; Enable Global Interrupts (I-bit in SREG).
-
-    ; --- Initialize Game State (always running, no start button) ---
-    ldi r16, DEFAULT_PLAYERS ; Set default number of players.
+    ; Initialize idle state before entering attract mode.
+    ldi r16, ZERO
     sts NumPlayers, r16
+    sts BallCount_P1, r16
+    sts BallCount_P2, r16
+    rcall ClearGameState
+    sei                     ; Enable display and sensor interrupts.
+    rjmp MainLoop
+
+MainLoop:
+    rcall ClearSound
+    rcall ShowAttractMode
+    rcall WaitForStartButton
+    sts NumPlayers, r16
+    cli
+    rcall ClearGameState
+    ldi r16, BALLS_PER_GAME
+    sts BallCount_P1, r16
+    lds r17, NumPlayers
+    cpi r17, Max_players
+    breq InitSecondPlayer
+    clr r16
+InitSecondPlayer:
+    sts BallCount_P2, r16
+    rcall InitDisplay
+    sei
+    rjmp StartPlaying
+
+ClearGameState:
     ldi r16, INITIAL_PLAYER_IDX ; Initialize CurrentPlayer to 0 (Player 1).
     sts CurrentPlayer, r16
     sts Score_P1_L, r16 ; Reset Player 1 Score Low Byte.
@@ -195,23 +218,18 @@ StartupMuxLoop:
     sts sensor_available, r16 ; Clear sensor ready flag.
     sts debounced_sensor_code, r16 ; Clear last sensor reading.
     
-    ; Show initial zero scores
-    ldi r16, ZERO
-    ldi r17, ZERO
-    ldi r18, PLAYER_1_ID
-    rcall DisplayHex        ; Display "0000" for Player 1.
-    ldi r18, PLAYER_2_ID
-    rcall DisplayHex        ; Display "0000" for Player 2.
+    ret
+
+StartPlaying:
+    rcall DispenseBall
+    rjmp InPlayLoop
 
 ; ------------------------------------------------------------------------------
 ; InPlayLoop
 ;
 ; Description:       The primary infinite loop for the pinball system. It manages
-;                    the high-level game flow, specifically the "Attract Mode"
-;                    or "In-Play" state (currently implemented as an always-on
-;                    game loop). It continuously checks for sensor events, updates
-;                    scores, controls LED patterns, and handles player switching
-;                    logic.
+;                    in-play state. It dispatches tilt and ball-out events,
+;                    updates scores and tones, and controls LED patterns.
 ;
 ; Operation:         The loop continuously refreshes the score display for both players by reading
 ;                    current score variables and updating the display buffer. It then polls the
@@ -221,8 +239,8 @@ StartupMuxLoop:
 ;                    range limits, and if valid, it is used to calculate an index into the `ScoreTable` to
 ;                    retrieve the corresponding point value. The `UpdateScore` routine is called to add these
 ;                    points to the current player's score, and `UpdateLEDPattern` is called to provide
-;                    visual feedback. Finally, if the game is in 2-player mode, the current player is toggled
-;                    before the loop repeats.
+;                    visual feedback. The frequency word drives PlayNote. Player turns
+;                    change only when the current ball ends.
 ;
 ; Arguments:         None.
 ; Return Value:      None (Infinite Loop).
@@ -238,7 +256,7 @@ StartupMuxLoop:
 ;
 ; Algorithms:        Polling loop with event handling.
 ; Data Structures:   ScoreTable (Lookup).
-; Limitations:       Currently bypasses "Start Button" logic for immediate play.
+; Limitations:       Single pending sensor event; no event queue.
 ; Known Bugs:        None.
 ; Special Notes:     None.
 ; Registers Changed: r16-r19, Z (ZH:ZL).
@@ -274,7 +292,14 @@ InPlayLoop:
     cpi  r16, SCORE_MAP_LIMIT
     brsh InPlayLoop            ; If >= 40 (same or higher), ignore as invalid.
 
-    ; Look up points (all sensors count) from ScoreTable in Program Memory
+    cpi r16, TILT_CODE
+    breq HandleTilt
+    cpi r16, BALL_OUT_CODE
+    breq HandleBallOut
+    cpi r16, START_BTN_CODE
+    breq InPlayLoop
+
+    ; Look up points and frequency from ScoreTable in Program Memory
     mov r30, r16            ; Move index to Z-pointer low byte register.
     clr r31                 ; Clear Z-pointer high byte.
     lsl r30                 ; Multiply index by 4 (each entry is 4 bytes).
@@ -291,17 +316,12 @@ InPlayLoop:
     ; Update score for current player with the points retrieved
     rcall UpdateScore
 
+    lpm r16, Z+             ; Load frequency low byte.
+    lpm r17, Z              ; Load frequency high byte.
+    rcall PlayNote
+
     ; Update the LED pattern for visual feedback
     rcall UpdateLEDPattern
-
-    ; Toggle player turn if in 2-player mode
-    lds r18, NumPlayers     ; Load number of players.
-    cpi r18, Max_players    ; Check if 2 players are active.
-    brne InPlayLoop         ; If not, stay with current player.
-    lds r16, CurrentPlayer  ; Load current player index (0 or 1).
-    ldi r17, PLAYER_TOGGLE_MASK
-    eor r16, r17            ; Toggle bit 0 (0->1, 1->0).
-    sts CurrentPlayer, r16  ; Save new player index.
 
     rjmp InPlayLoop         ; Continue the main loop.
 
@@ -312,7 +332,7 @@ InPlayLoop:
 ;                    Plays a specific warning sound and then penalizes the player
 ;                    by treating it as a "Ball Out" event (ending the current ball).
 ;
-; Operation:         The necessary frequency and duration parameters for the tilt sound are loaded
+; Operation:         The 16-bit frequency parameter for the tilt sound is loaded
 ;                    into registers. The `PlayNote` function is then called to generate the auditory
 ;                    warning. Immediately after starting the sound, control is transferred to the
 ;                    `HandleBallOut` routine, effectively ending the current ball as a penalty.
@@ -337,8 +357,8 @@ InPlayLoop:
 ; Registers Changed: r16, r17.
 ; ------------------------------------------------------------------------------
 HandleTilt:
-    ldi r16, TILT_FREQ             ; Load Tilt Sound Frequency (defined in constants).
-    ldi r17, TILT_DUR              ; Load Tilt Sound Duration.
+    ldi r16, low(TILT_FREQ)             ; Load Tilt Sound Frequency (defined in constants).
+    ldi r17, high(TILT_FREQ)        ; Load frequency high byte.
     call PlayNote                  ; Generate the sound.
     rjmp HandleBallOut             ; Tilt results in immediate loss of ball.
 
@@ -562,3 +582,13 @@ sensor_available:       .byte 1
 .include "Init_Sensor.asm"
 .include "SystemTables.asm"
 
+.cseg
+.if PC > FLASHEND + 1
+    .error "Program exceeds ATmega64 flash"
+.endif
+
+.dseg
+.if PC > RAMEND + 1
+    .error "Variables exceed ATmega64 SRAM"
+.endif
+.cseg

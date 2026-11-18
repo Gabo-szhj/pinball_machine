@@ -12,7 +12,7 @@
 ;
 ; The public functions included are:
 ;    ShowAttractMode        - Displays high score during attract mode.
-;    WaitForStartButton     - Non-blocking start button handler (1P/2P select).
+;    WaitForStartButton     - Blocking start button handler (1P/2P select).
 ;    UpdateScore            - Updates player scores and checks thresholds.
 ;    UpdateLEDPattern       - Updates LED pattern based on game state.
 ;    DispenseBall           - Controls ball launch timing.
@@ -152,6 +152,7 @@ WaitStart_Loop:
     sts sensor_available, r17   ; Clear flag.
     sei                         ; Enable interrupts.
     
+    subi r16, SCORE_MAP_OFFSET
     cpi r16, START_BTN_CODE     ; Compare with Start Button Code.
     brne WaitStart_Loop         ; If not start button, keep waiting.
     
@@ -179,6 +180,7 @@ DelayInner2:
     ldi r17, ZERO
     sts sensor_available, r17
     sei
+    subi r16, SCORE_MAP_OFFSET
     cpi r16, START_BTN_CODE     ; Check if input is Start Button.
     breq TwoPlayerMode          ; If so, valid double-press: Start 2 Player Game.
     
@@ -430,10 +432,8 @@ DelayLoop:
 ;                    at the end of a game by the main loop.
 ;
 ; Operation:         Reads the current high score from EEPROM (blocking operation). Compares
-;                    it first with Player 1's score. If Player 1 is higher, the new score
-;                    is written to EEPROM (blocking operation). Then (if applicable/desired),
-;                    it could check Player 2. (Current implementation checks P1, then P2,
-;                    updating if either is higher).
+;                    the larger of the two player scores with the stored record. A strictly
+;                    larger score is written to EEPROM once (blocking operation).
 ;
 ; Arguments:         None.
 ; Return Value:      None.
@@ -473,28 +473,23 @@ CheckHighScore:
     ldi YH, high(HighScore_L)
     call ReadEEROM          ; Read high score from EEROM
     
-    ; --- Compare Player 1 Score ---
+    ; Select the larger unsigned player score.
     lds r18, Score_P1_L
     lds r19, Score_P1_H
+    lds r20, Score_P2_L
+    lds r21, Score_P2_H
+    cp r18, r20
+    cpc r19, r21
+    brsh CompareStoredScore
+    mov r18, r20
+    mov r19, r21
+
+CompareStoredScore:
     lds r20, HighScore_L
     lds r21, HighScore_H
-    
-    ; Compare: Score_P1 vs HighScore
-    cp r18, r20             ; Compare low bytes
-    cpc r19, r21            ; Compare high bytes with carry
-    brlo CheckP2Score       ; If P1 score < high score, check P2
-    
-    rjmp FoundNewHighScore
-
-CheckP2Score:
-    ; --- Compare Player 2 Score ---
-    lds r18, Score_P2_L
-    lds r19, Score_P2_H
-    
-    ; Compare: Score_P2 vs HighScore
-    cp r18, r20             ; Compare low bytes
-    cpc r19, r21            ; Compare high bytes with carry
-    brlo CheckHighScoreDone ; If P2 score < high score, done
+    cp r20, r18
+    cpc r21, r19
+    brsh CheckHighScoreDone
 
 FoundNewHighScore:
     ; New high score detected (in r18:r19)

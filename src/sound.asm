@@ -33,7 +33,7 @@
 ;                    it calls a helper routine to disable the timer output, silencing
 ;                    the speaker. If the frequency is non-zero, it calculates the
 ;                    required 16-bit compare match value for OCR1A using the formula:
-;                    OCR1A = (F_CPU / 500000) - 1. This value is
+;                    OCR1A = (500000 / frequency) - 1. This value is
 ;                    then written to the OCR1AH:OCR1AL register pair to produce sound.
 ;
 ; Arguments:         r17:r16 - The desired frequency in Hz. A value of 0 indicates silence.
@@ -109,6 +109,8 @@ ComputeOCR:
     ; High byte must be written first for correct 16-bit access.
     out     OCR1AH, r19
     out     OCR1AL, r18
+    ldi     r18, (1 << COM1A0)
+    out     TCCR1A, r18
 
     ret
 
@@ -147,7 +149,7 @@ ComputeOCR:
 ;                    The `ClearSound` label provides a secondary entry point for
 ;                    other functions to use to silence the speaker.
 ;
-; Registers Changed: None.
+; Registers Changed: r18, flags.
 ; --------------------------------------------------------------------------------
 Init_Sound:
     ; Set PB5 (the OC1A pin) as a hardware output to speaker.
@@ -155,6 +157,8 @@ Init_Sound:
 
 ; This label is an entry point for other functions to disable sound output.
 ClearSound:
+    clr     r18
+    out     TCCR1A, r18
     ; Set the output on PB5 to low (0).
     cbi     PORTB, 5
     ret

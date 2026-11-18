@@ -1,0 +1,6 @@
+build/
+*.obj
+*.hex
+*.eep.hex
+*.cof
+__pycache__/
