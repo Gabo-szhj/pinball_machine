@@ -49,9 +49,9 @@
 ; NOTE: These codes map to actual physical buttons on the 5x8 matrix (0-39)
 ; Choose which physical sensor you want to use for each function
 ; Example mappings (adjust based on your hardware):
-.equ    START_BTN_CODE    = 0       ; START button - Sensor 0 (Row 1, Column 1)
-.equ    TILT_CODE         = 38      ; TILT sensor - Sensor 39 (Row 5, Column 8) 
-.equ    BALL_OUT_CODE     = 39      ; BALL OUT sensor - Sensor 38 (Row 5, Column 7)
+.equ    START_BTN_CODE    = 0       ; Normalized index: row 1, column 1
+.equ    TILT_CODE         = 38      ; Normalized index: row 5, column 7
+.equ    BALL_OUT_CODE     = 39      ; Normalized index: row 5, column 8
 
 ; Timing and Limits
 ; ------------------------------------------------------------------------------
@@ -61,4 +61,4 @@
 .equ    SOLENOID_DELAY    = 100   ; Delay loop for solenoid activation
 .equ    SCORE_MAP_OFFSET  = 9     ; Offset to map sensor code to score index
 .equ    SCORE_MAP_LIMIT   = 40    ; Upper bound for valid score sensor codes
-
+.equ    BALLS_PER_GAME    = 3

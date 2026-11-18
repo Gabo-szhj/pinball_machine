@@ -133,7 +133,7 @@ DetectCol:                          ; detect the switch's column to find the sen
     lsr     r18                     ; If not pressed, shift the input bits right to check 
                                     ; the next column.
     inc     r23                     ; Increment the column counter.
-    cpi     r23, N_COLUMNS          ; Compare column count to the total number of columns to 
+    cpi     r23, N_COLUMNS + 1      ; Include the eighth column in the search.
                                     ; prevent an infinite loop if no key is found
     brlt    DetectCol               ; If we haven't checked all columns, loop back.
 
@@ -143,11 +143,8 @@ DetectCol:                          ; detect the switch's column to find the sen
     sts     debounce_counter, r20   ; Reset the debounce counter.
     rjmp    DebounceDone            ; Jump to the end.
 
-ContinuousHold:                     ; If a continuous hold is detected
-    clr     r25                     
-    sts     sensor_available, r25   ; Clear the 'sensor_available' flag to 0, indicating no 
-                                    ; new key press is ready.
-    rjmp    DebounceDone            ; Jump to return
+ContinuousHold:                     ; Keep the event until the foreground consumes it.
+    rjmp    DebounceDone
 
 ColFound:                           ; A pressed key was located at the current 'rowcount' 
                                     ; then find the column where it is pressed
@@ -163,10 +160,7 @@ ColFound:                           ; A pressed key was located at the current '
     ldi     r25, SENSOR_ONE               
     sts     sensor_available, r25   ; Set the 'sensor_available' flag to 1 (true) to signal a 
                                     ; switch is debounced and ready.
-    clr     r19                    
-    sts     debouncing, r19         ; Clear the 'debouncing' flag; this switch press has been 
-                                    ; debounced, don't stay in the debounced state
-
+    ; Stay on this row until the input changes; report a held switch only once.
     rjmp    DebounceDone            ; Jump to the end of the routine.
 
 InputChangedDuringDebounce:         ; The input changed while waiting, so the signal is unstable. 
